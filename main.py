@@ -7,7 +7,9 @@ import pytesseract
 import io
 import re
 
-pytesseract.pytesseract.tesseract_cmd = r"C:\Users\terso\Desktop\GOV_USA JOBS\tesseract.exe"
+import os
+if os.name == 'nt':  # Windows
+    pytesseract.pytesseract.tesseract_cmd = r"C:\Users\terso\Desktop\GOV_USA JOBS\tesseract.exe"
 
 app = FastAPI()
 
