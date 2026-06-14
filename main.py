@@ -2,7 +2,7 @@ from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-import anthropic
+import google.generativeai as genai
 import base64
 import os
 
@@ -18,7 +18,8 @@ app.add_middleware(
 
 app.mount("/static", StaticFiles(directory="."), name="static")
 
-client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
+model = genai.GenerativeModel("gemini-1.5-flash")
 
 @app.get("/")
 def home():
@@ -30,24 +31,12 @@ async def upload_label(file: UploadFile = File(...)):
     base64_image = base64.standard_b64encode(image_data).decode("utf-8")
     content_type = file.content_type or "image/jpeg"
 
-    message = client.messages.create(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=1024,
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": content_type,
-                            "data": base64_image,
-                        },
-                    },
-                    {
-                        "type": "text",
-                        "text": """Analyze this alcohol label image and extract the following fields.
+    response = model.generate_content([
+        {
+            "mime_type": content_type,
+            "data": base64_image
+        },
+        """Analyze this alcohol label image and extract the following fields.
 For each field, state whether it is present or not.
 Respond in this exact format with no extra text:
 BRAND_NAME: <value or NOT FOUND>
@@ -56,13 +45,9 @@ ALCOHOL_CONTENT: <value or NOT FOUND>
 NET_CONTENTS: <value or NOT FOUND>
 GOVERNMENT_WARNING: <PRESENT or NOT FOUND>
 WARNING_FORMAT_CORRECT: <YES if GOVERNMENT WARNING appears in all caps, NO otherwise>"""
-                    }
-                ],
-            }
-        ],
-    )
+    ])
 
-    response_text = message.content[0].text
+    response_text = response.text
     lines = response_text.strip().split('\n')
     parsed = {}
     for line in lines:
