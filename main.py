@@ -4,8 +4,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import anthropic
 import base64
-import re
-import io
 import os
 
 app = FastAPI()
@@ -33,7 +31,7 @@ async def upload_label(file: UploadFile = File(...)):
     content_type = file.content_type or "image/jpeg"
 
     message = client.messages.create(
-        model="claude-opus-4-6",
+        model="claude-haiku-4-5-20251001",
         max_tokens=1024,
         messages=[
             {
@@ -49,15 +47,15 @@ async def upload_label(file: UploadFile = File(...)):
                     },
                     {
                         "type": "text",
-                        "text": """Analyze this alcohol label image and extract the following fields. 
-                        For each field, state whether it is present or not.
-                        Respond in this exact format:
-                        BRAND_NAME: <value or NOT FOUND>
-                        CLASS_TYPE: <value or NOT FOUND>
-                        ALCOHOL_CONTENT: <value or NOT FOUND>
-                        NET_CONTENTS: <value or NOT FOUND>
-                        GOVERNMENT_WARNING: <PRESENT or NOT FOUND>
-                        WARNING_FORMAT_CORRECT: <YES if 'GOVERNMENT WARNING:' appears in all caps, NO otherwise>"""
+                        "text": """Analyze this alcohol label image and extract the following fields.
+For each field, state whether it is present or not.
+Respond in this exact format with no extra text:
+BRAND_NAME: <value or NOT FOUND>
+CLASS_TYPE: <value or NOT FOUND>
+ALCOHOL_CONTENT: <value or NOT FOUND>
+NET_CONTENTS: <value or NOT FOUND>
+GOVERNMENT_WARNING: <PRESENT or NOT FOUND>
+WARNING_FORMAT_CORRECT: <YES if GOVERNMENT WARNING appears in all caps, NO otherwise>"""
                     }
                 ],
             }
@@ -74,4 +72,30 @@ async def upload_label(file: UploadFile = File(...)):
 
     field_checks = {
         "brand_name": {
-            "pass": parsed.get("BRAND_NAME", "NOT FOUND")
+            "pass": parsed.get("BRAND_NAME", "NOT FOUND") != "NOT FOUND",
+            "detail": parsed.get("BRAND_NAME", "Not detected")
+        },
+        "class_type": {
+            "pass": parsed.get("CLASS_TYPE", "NOT FOUND") != "NOT FOUND",
+            "detail": parsed.get("CLASS_TYPE", "Not detected")
+        },
+        "alcohol_content": {
+            "pass": parsed.get("ALCOHOL_CONTENT", "NOT FOUND") != "NOT FOUND",
+            "detail": parsed.get("ALCOHOL_CONTENT", "Not detected")
+        },
+        "net_contents": {
+            "pass": parsed.get("NET_CONTENTS", "NOT FOUND") != "NOT FOUND",
+            "detail": parsed.get("NET_CONTENTS", "Not detected")
+        },
+        "government_warning": {
+            "pass": parsed.get("GOVERNMENT_WARNING", "NOT FOUND") == "PRESENT" and parsed.get("WARNING_FORMAT_CORRECT", "NO") == "YES",
+            "detail": "Government Warning present and correctly formatted" if parsed.get("GOVERNMENT_WARNING") == "PRESENT" else "Government Warning not found"
+        }
+    }
+
+    overall_pass = all(v["pass"] for v in field_checks.values())
+
+    return {
+        "overall_result": "PASS" if overall_pass else "FAIL",
+        "field_checks": field_checks
+    }
