@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>TTB Label Verification</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, sans-serif; background: #f4f6f9; color: #333; }
+    header { background: #1a3a5c; color: white; padding: 20px 40px; }
+    header h1 { font-size: 22px; }
+    header p { font-size: 13px; opacity: 0.8; margin-top: 4px; }
+    .container { max-width: 800px; margin: 40px auto; padding: 0 20px; }
+    .card { background: white; border-radius: 8px; padding: 30px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 30px; }
+    .card h2 { font-size: 18px; margin-bottom: 16px; color: #1a3a5c; }
+    label.upload-area {
+      display: block;
+      border: 2px dashed #aac;
+      border-radius: 8px;
+      padding: 40px;
+      text-align: center;
+      cursor: pointer;
+      background: #f9faff;
+      transition: background 0.2s;
+    }
+    label.upload-area:hover { background: #eef0ff; }
+    label.upload-area p { color: #666; font-size: 15px; }
+    #fileInput { display: none; }
+    #preview { margin-top: 16px; text-align: center; }
+    #preview img { max-width: 100%; max-height: 300px; border-radius: 6px; border: 1px solid #ddd; }
+    .btn { display: block; width: 100%; margin-top: 20px; padding: 14px; background: #1a3a5c; color: white; font-size: 16px; border: none; border-radius: 6px; cursor: pointer; }
+    .btn:hover { background: #254e7a; }
+    .btn:disabled { background: #999; cursor: not-allowed; }
+    #results { display: none; }
+    .overall { font-size: 20px; font-weight: bold; text-align: center; padding: 16px; border-radius: 6px; margin-bottom: 20px; }
+    .overall.pass { background: #e6f4ea; color: #2e7d32; }
+    .overall.fail { background: #fdecea; color: #c62828; }
+    .field-row { display: flex; justify-content: space-between; align-items: flex-start; padding: 12px 0; border-bottom: 1px solid #eee; }
+    .field-row:last-child { border-bottom: none; }
+    .field-name { font-weight: bold; font-size: 14px; min-width: 160px; }
+    .field-detail { font-size: 13px; color: #555; flex: 1; padding: 0 12px; }
+    .badge { font-size: 12px; font-weight: bold; padding: 4px 10px; border-radius: 12px; white-space: nowrap; }
+    .badge.pass { background: #e6f4ea; color: #2e7d32; }
+    .badge.fail { background: #fdecea; color: #c62828; }
+    #loading { display: none; text-align: center; padding: 20px; color: #555; font-size: 15px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>TTB Alcohol Label Verification</h1>
+  <p>Upload a label image to check compliance with TTB requirements</p>
+</header>
+
+<div class="container">
+  <div class="card">
+    <h2>Upload Label Image</h2>
+    <label class="upload-area" for="fileInput">
+      <p>📁 Click here to select a label image</p>
+      <p style="font-size:12px; margin-top:8px;">Supported formats: JPG, PNG</p>
+    </label>
+    <input type="file" id="fileInput" accept="image/*" />
+    <div id="preview"></div>
+    <button class="btn" id="submitBtn" disabled>Verify Label</button>
+  </div>
+
+  <div id="loading">⏳ Analyzing label, please wait...</div>
+
+  <div class="card" id="results">
+    <h2>Verification Results</h2>
+    <div id="overall" class="overall"></div>
+    <div id="fieldChecks"></div>
+  </div>
+</div>
+
+<script>
+  const FIELD_LABELS = {
+    government_warning: "Government Warning",
+    alcohol_content: "Alcohol Content",
+    net_contents: "Net Contents",
+    brand_name: "Brand Name",
+    class_type: "Class / Type"
+  };
+
+  document.getElementById('fileInput').addEventListener('change', function() {
+    const file = this.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+      document.getElementById('preview').innerHTML =
+        `<img src="${e.target.result}" alt="Label preview" />`;
+      document.getElementById('submitBtn').disabled = false;
+    };
+    reader.readAsDataURL(file);
+  });
+
+  document.getElementById('submitBtn').addEventListener('click', async function() {
+    const fileInput = document.getElementById('fileInput');
+    if (!fileInput.files[0]) return;
+
+    document.getElementById('loading').style.display = 'block';
+    document.getElementById('results').style.display = 'none';
+    this.disabled = true;
+
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+
+    try {
+      const response = await fetch('http://127.0.0.1:8000/upload-label/', {
+        method: 'POST',
+        body: formData
+      });
+      const data = await response.json();
+      displayResults(data);
+    } catch (err) {
+      alert('Error connecting to the server. Make sure the API is running.');
+    } finally {
+      document.getElementById('loading').style.display = 'none';
+      this.disabled = false;
+    }
+  });
+
+  function displayResults(data) {
+    const overallEl = document.getElementById('overall');
+    const pass = data.overall_result === 'PASS';
+    overallEl.textContent = pass ? '✅ PASS — Label meets TTB requirements' : '❌ FAIL — Label has compliance issues';
+    overallEl.className = 'overall ' + (pass ? 'pass' : 'fail');
+
+    const checksEl = document.getElementById('fieldChecks');
+    checksEl.innerHTML = '';
+    for (const [key, val] of Object.entries(data.field_checks)) {
+      const row = document.createElement('div');
+      row.className = 'field-row';
+      row.innerHTML = `
+        <div class="field-name">${FIELD_LABELS[key] || key}</div>
+        <div class="field-detail">${val.detail || ''}</div>
+        <div class="badge ${val.pass ? 'pass' : 'fail'}">${val.pass ? 'PASS' : 'FAIL'}</div>
+      `;
+      checksEl.appendChild(row);
+    }
+    document.getElementById('results').style.display = 'block';
+  }
+</script>
+
+</body>
+</html>
