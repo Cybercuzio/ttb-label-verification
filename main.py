@@ -3,7 +3,8 @@ from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import google.generativeai as genai
-import base64
+import PIL.Image
+import io
 import os
 
 app = FastAPI()
@@ -19,7 +20,19 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory="."), name="static")
 
 genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
-model = genai.GenerativeModel("gemini-1.5-flash")
+model = genai.GenerativeModel("gemini-2.0-flash-exp")
+
+PROMPT = (
+    "Analyze this alcohol label image and extract the following fields. "
+    "For each field, state whether it is present or not. "
+    "Respond in this exact format with no extra text:\n"
+    "BRAND_NAME: <value or NOT FOUND>\n"
+    "CLASS_TYPE: <value or NOT FOUND>\n"
+    "ALCOHOL_CONTENT: <value or NOT FOUND>\n"
+    "NET_CONTENTS: <value or NOT FOUND>\n"
+    "GOVERNMENT_WARNING: <PRESENT or NOT FOUND>\n"
+    "WARNING_FORMAT_CORRECT: <YES if GOVERNMENT WARNING appears in all caps, NO otherwise>"
+)
 
 @app.get("/")
 def home():
@@ -28,25 +41,9 @@ def home():
 @app.post("/upload-label/")
 async def upload_label(file: UploadFile = File(...)):
     image_data = await file.read()
-    base64_image = base64.standard_b64encode(image_data).decode("utf-8")
-    content_type = file.content_type or "image/jpeg"
+    image = PIL.Image.open(io.BytesIO(image_data))
 
-    response = model.generate_content([
-        {
-            "mime_type": content_type,
-            "data": base64_image
-        },
-        """Analyze this alcohol label image and extract the following fields.
-For each field, state whether it is present or not.
-Respond in this exact format with no extra text:
-BRAND_NAME: <value or NOT FOUND>
-CLASS_TYPE: <value or NOT FOUND>
-ALCOHOL_CONTENT: <value or NOT FOUND>
-NET_CONTENTS: <value or NOT FOUND>
-GOVERNMENT_WARNING: <PRESENT or NOT FOUND>
-WARNING_FORMAT_CORRECT: <YES if GOVERNMENT WARNING appears in all caps, NO otherwise>"""
-    ])
-
+    response = model.generate_content([image, PROMPT])
     response_text = response.text
     lines = response_text.strip().split('\n')
     parsed = {}
